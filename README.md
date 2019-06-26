@@ -1,6 +1,6 @@
 An emulation of Cassandra token ring distribution algorithm (SimpleStrategy)
 to see how many distinct permutations of nodes the algorithm creates,
-for a different number of nodes. 
+for a different number of nodes.
 
 The program prints somethign like this:
 

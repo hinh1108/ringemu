@@ -11,7 +11,7 @@ REPLICATION_FACTOR = 3
 NUM_TOKENS = 256
 # Number of nodes to try in the simulation. We start from
 # REPLICATION_FACTOR and run simulation up to this numer of nodes
-NODE_COUNT_MAX = 100 
+NODE_COUNT_MAX = 100
 # Each token value is within range 0..TOKEN_MAX
 TOKEN_MAX = 1000000
 
@@ -19,7 +19,7 @@ class TokenMetadata:
     """An ordered mapping of a token, which is an integer, to a
     ReplicaSet"""
 
-    tokens = {} 
+    tokens = {}
     primaries = {}
     sorted_tokens = None
 
@@ -41,8 +41,8 @@ class TokenMetadata:
         if upper >= len(self.sorted_tokens):
             upper = 0
         token = self.sorted_tokens[upper]
-        return self.primaries[token], token 
-            
+        return self.primaries[token], token
+ 
     def count_distinct_replicasets(self):
 #        for token in self.tokens:
 #            print(self.tokens[token])
@@ -63,7 +63,7 @@ class TokenMetadata:
             we registered all primaries"""
 
         self.tokens[token].set_peers(self)
-        
+
 
 class Replica:
     """A node in Cassandra ring. Uniquely identified by UUID"""
@@ -125,6 +125,9 @@ def main():
     """ Print a distribution of distinct replica triplets for clusters
         of different size"""
 
+    print("Replication factor {}, num_tokens = {}, counting up to {} nodes"
+          .format(REPLICATION_FACTOR, NUM_TOKENS, NODE_COUNT_MAX))
+
     tm = TokenMetadata(REPLICATION_FACTOR)
     for i in range(REPLICATION_FACTOR + 1, NODE_COUNT_MAX + 1):
         replica = Replica()
@@ -133,6 +136,6 @@ def main():
             tm.set_peers(token)
         print("cluster size: {}, groups: {}".format(i,
                                                     tm.count_distinct_replicasets()))
-                
+
 if __name__ == '__main__':
     main()
