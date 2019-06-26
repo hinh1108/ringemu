@@ -1,53 +1,137 @@
 #!/usr/bin/env python3
 
+import uuid
+import random
+import bisect
+import pprint
+
 # Cassandra replication factor
 REPLICATION_FACTOR = 3
 # Number of vnodes each physical node adds to the ring
 NUM_TOKENS = 256
-# Number of nodes to try in the simulation. We start from REPLICATION_FACTOR
-# and run simulation up to this numer of nodes
-NODE_COUNT_MAX = 100
+# Number of nodes to try in the simulation. We start from
+# REPLICATION_FACTOR and run simulation up to this numer of nodes
+NODE_COUNT_MAX = 100 
+# Each token value is within range 0..TOKEN_MAX
+TOKEN_MAX = 1000000
 
-class Replica:
-    """A node in Cassandra ring. Uniquely identified by UUID"""
-    uuid = None
-
-    def gen_tokens(self):
-        """Generate unique tokens for this replica. Skip a token and
-        generate a new value if it is already in TokenMetadata"""
-        pass
-
-class ReplicaSet:
-    """REPLICATION_FACTOR sized bag of replicas"""
-    replicas = None
-    
 class TokenMetadata:
     """An ordered mapping of a token, which is an integer, to a
     ReplicaSet"""
 
+    tokens = {} 
+    primaries = {}
+    sorted_tokens = None
+
+    def __init__(self, replication_factor):
+        """Create replicas and add seeds for replication_factor nodes"""
+
+        # First create enough replicas so that we have enough peers
+        for i in range(0, replication_factor):
+            replica = Replica()
+            replica.gen_tokens(self)
+        # Create replicasets from the initial set of replicas.
+        for token in self.tokens:
+            self.set_peers(token)
+
+    def upper_bound(self, token):
+        assert(len(self.tokens.keys()))
+
+        upper = bisect.bisect_right(self.sorted_tokens, token);
+        if upper >= len(self.sorted_tokens):
+            upper = 0
+        token = self.sorted_tokens[upper]
+        return self.primaries[token], token 
+            
+    def count_distinct_replicasets(self):
+#        for token in self.tokens:
+#            print(self.tokens[token])
+        return len(set(self.tokens.values()))
+
+    def register_token(self, token, primary):
+        """Add token to the ordered set of tokens and set the passed
+        replica as the primar token. Creates a replicaset for the token
+        with no peers, the peers are set afterwards with set_peers() call,
+        to make bootstrap possible"""
+
+        self.primaries[token]  = primary;
+        self.tokens[token] = ReplicaSet(token);
+        self.sorted_tokens = sorted(self.tokens.keys())
+
+    def set_peers(self, token):
+        """Set replicaset peers. We can begin setting peers only after
+            we registered all primaries"""
+
+        self.tokens[token].set_peers(self)
+        
+
+class Replica:
+    """A node in Cassandra ring. Uniquely identified by UUID"""
+    uuid = None
     tokens = None
 
-    def count_distinct_replicasets(self):
-        return 1
+    def __init__(self):
+        self.uuid = uuid.uuid4()
+        self.tokens = []
 
-class SimpleReplicationStrategy:
-    """Given a new replica, generate tokens, add it to the cluster
-        and assign replicas for all new ranges"""
-    @staticmethod
-    def update_token_metadata(replica, tm):
-        pass
+    def gen_tokens(self, token_metadata):
+        """Generate unique tokens for this replica. Re-generate
+         tokens which are already on the ring, to avoid duplicates"""
 
+        while len(self.tokens) < NUM_TOKENS:
+            token = random.randint(0, TOKEN_MAX)
+            if token in token_metadata.tokens:
+                continue
+            self.tokens.append(token)
+            token_metadata.register_token(token, self)
+
+class ReplicaSet:
+    """REPLICATION_FACTOR sized bag of replicas"""
+    token = None
+    replicas = None
+    uuids = None
+
+    def __init__(self, token):
+        self.token = token
+        self.replicas = []
+        uuids = set()
+
+    def set_peers(self, token_metadata):
+        token = self.token
+        self.replicas.append(token_metadata.primaries[token])
+        self.uuids = set(x.uuid for x in self.replicas)
+        while len(self.uuids) < REPLICATION_FACTOR:
+            replica, token = token_metadata.upper_bound(token)
+            if replica.uuid not in self.uuids:
+                self.uuids.add(replica.uuid)
+                self.replicas.append(replica)
+
+    def __hash__(self):
+        """Ignore the primary replica in identity functions. Replicasets
+           with the same set of nodes but a different primary
+           are considered identical"""
+
+        return hash(x for x in sorted(self.uuids))
+
+    def __eq__(self, other):
+        if not isinstance(other, ReplicaSet):
+            return NotImplemented
+        return self.uuids == other.uuids
+
+    def __str__(self):
+        return str(self.uuids)
 
 def main():
     """ Print a distribution of distinct replica triplets for clusters
         of different size"""
 
-    for i in range(REPLICATION_FACTOR, NODE_COUNT_MAX):
-        tm = TokenMetadata()
-        for j in range(1, i):
-            replica = Replica()
-            SimpleReplicationStrategy.update_token_metadata(tm, replica)
-        print("cluster size: {}, groups: {}".format(j,
+    tm = TokenMetadata(REPLICATION_FACTOR)
+    for i in range(REPLICATION_FACTOR + 1, NODE_COUNT_MAX + 1):
+        replica = Replica()
+        replica.gen_tokens(tm)
+        for token in replica.tokens:
+            tm.set_peers(token)
+        print("cluster size: {}, groups: {}".format(i,
                                                     tm.count_distinct_replicasets()))
                 
 if __name__ == '__main__':
