@@ -15,10 +15,13 @@ NODE_COUNT_MAX = 100
 # Each token value is within range 0..TOKEN_MAX
 TOKEN_MAX = 1000000
 
+TWEAK1 = False
+
 class TokenMetadata:
     """An ordered mapping of a token, which is an integer, to a
     ReplicaSet"""
 
+    nodes = []
     tokens = {}
     primaries = {}
     sorted_tokens = None
@@ -30,6 +33,8 @@ class TokenMetadata:
         for i in range(0, replication_factor):
             replica = Replica()
             replica.gen_tokens(self)
+            self.nodes.append(replica)
+        self.sorted_tokens = sorted(self.tokens.keys())
         # Create replicasets from the initial set of replicas.
         for token in self.tokens:
             self.set_peers(token)
@@ -42,10 +47,14 @@ class TokenMetadata:
             upper = 0
         token = self.sorted_tokens[upper]
         return self.primaries[token], token
- 
+
     def count_distinct_replicasets(self):
-#        for token in self.tokens:
-#            print(self.tokens[token])
+        for node in self.nodes:
+            peers = set({node.uuid})
+            for token in node.tokens:
+                for peer in self.tokens[token].replicas:
+                    peers.add(peer.uuid)
+            print("Node {} has {} peers".format(node.uuid, len(peers)))
         return len(set(self.tokens.values()))
 
     def register_token(self, token, primary):
@@ -56,6 +65,10 @@ class TokenMetadata:
 
         self.primaries[token]  = primary;
         self.tokens[token] = ReplicaSet(token);
+
+    def gen_tokens(self, replica):
+        replica.gen_tokens(self)
+        self.nodes.append(replica)
         self.sorted_tokens = sorted(self.tokens.keys())
 
     def set_peers(self, token):
@@ -105,6 +118,13 @@ class ReplicaSet:
             if replica.uuid not in self.uuids:
                 self.uuids.add(replica.uuid)
                 self.replicas.append(replica)
+                if TWEAK1 and len(token_metadata.tokens[token].replicas) > 1:
+                    # Add ex-secondary as the tertiary right away
+                    secondary = token_metadata.tokens[token].replicas[1]
+                    if secondary.uuid not in self.uuids:
+                        self.uuids.add(secondary.uuid)
+                        self.replicas.append(secondary)
+                    
 
     def __hash__(self):
         """Ignore the primary replica in identity functions. Replicasets
@@ -131,7 +151,7 @@ def main():
     tm = TokenMetadata(REPLICATION_FACTOR)
     for i in range(REPLICATION_FACTOR + 1, NODE_COUNT_MAX + 1):
         replica = Replica()
-        replica.gen_tokens(tm)
+        tm.gen_tokens(replica)
         for token in replica.tokens:
             tm.set_peers(token)
         print("cluster size: {}, groups: {}".format(i,
