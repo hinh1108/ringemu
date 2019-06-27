@@ -36,8 +36,7 @@ class TokenMetadata:
             self.nodes.append(replica)
         self.sorted_tokens = sorted(self.tokens.keys())
         # Create replicasets from the initial set of replicas.
-        for token in self.tokens:
-            self.set_peers(token)
+        self.set_peers()
 
     def upper_bound(self, token):
         assert(len(self.tokens.keys()))
@@ -71,11 +70,11 @@ class TokenMetadata:
         self.nodes.append(replica)
         self.sorted_tokens = sorted(self.tokens.keys())
 
-    def set_peers(self, token):
+    def set_peers(self):
         """Set replicaset peers. We can begin setting peers only after
             we registered all primaries"""
-
-        self.tokens[token].set_peers(self)
+        for token in self.tokens:
+            self.tokens[token].set_peers(self)
 
 
 class Replica:
@@ -111,7 +110,7 @@ class ReplicaSet:
 
     def set_peers(self, token_metadata):
         token = self.token
-        self.replicas.append(token_metadata.primaries[token])
+        self.replicas = [ token_metadata.primaries[token] ]
         self.uuids = set(x.uuid for x in self.replicas)
         while len(self.uuids) < REPLICATION_FACTOR:
             replica, token = token_metadata.upper_bound(token)
@@ -131,7 +130,7 @@ class ReplicaSet:
            with the same set of nodes but a different primary
            are considered identical"""
 
-        return hash(x for x in sorted(self.uuids))
+        return hash(x for x in self.uuids)
 
     def __eq__(self, other):
         if not isinstance(other, ReplicaSet):
@@ -152,8 +151,7 @@ def main():
     for i in range(REPLICATION_FACTOR + 1, NODE_COUNT_MAX + 1):
         replica = Replica()
         tm.gen_tokens(replica)
-        for token in replica.tokens:
-            tm.set_peers(token)
+        tm.set_peers()
         print("cluster size: {}, groups: {}".format(i,
                                                     tm.count_distinct_replicasets()))
 
