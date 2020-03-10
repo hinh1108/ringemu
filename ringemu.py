@@ -11,11 +11,11 @@ REPLICATION_FACTOR = 3
 NUM_TOKENS = 256
 # Number of nodes to try in the simulation. We start from
 # REPLICATION_FACTOR and run simulation up to this numer of nodes
-NODE_COUNT_MAX = 100
+NODE_COUNT_MAX = 1000
 # Each token value is within range 0..TOKEN_MAX
-TOKEN_MAX = 1000000
+TOKEN_MAX = 1000000000
 
-TWEAK1 = False
+TWEAK1 = True 
 
 class TokenMetadata:
     """An ordered mapping of a token, which is an integer, to a
@@ -36,6 +36,7 @@ class TokenMetadata:
             self.nodes.append(replica)
         self.sorted_tokens = sorted(self.tokens.keys())
         # Create replicasets from the initial set of replicas.
+        self.replicasets = set()
         self.set_peers()
 
     def upper_bound(self, token):
@@ -48,13 +49,13 @@ class TokenMetadata:
         return self.primaries[token], token
 
     def count_distinct_replicasets(self):
-        for node in self.nodes:
-            peers = set({node.uuid})
-            for token in node.tokens:
-                for peer in self.tokens[token].replicas:
-                    peers.add(peer.uuid)
-            print("Node {} has {} peers".format(node.uuid, len(peers)))
-        return len(set(self.tokens.values()))
+#        for node in self.nodes:
+#            peers = set({node.uuid})
+#            for token in node.tokens:
+#                for peer in self.tokens[token].replicas:
+#                    peers.add(peer.uuid)
+#            print("Node {} has {} peers".format(node.uuid, len(peers)))
+        return len(self.replicasets)
 
     def register_token(self, token, primary):
         """Add token to the ordered set of tokens and set the passed
@@ -73,8 +74,10 @@ class TokenMetadata:
     def set_peers(self):
         """Set replicaset peers. We can begin setting peers only after
             we registered all primaries"""
-        for token in self.tokens:
+        self.replicasets = set()
+        for token in self.tokens.keys():
             self.tokens[token].set_peers(self)
+            self.replicasets.add(self.tokens[token].str_uuids)
 
 
 class Replica:
@@ -117,12 +120,15 @@ class ReplicaSet:
             if replica.uuid not in self.uuids:
                 self.uuids.add(replica.uuid)
                 self.replicas.append(replica)
-                if TWEAK1 and len(token_metadata.tokens[token].replicas) > 1:
+                if TWEAK1 and len(token_metadata.tokens[token].replicas) > 1 and len(self.uuids) < REPLICATION_FACTOR:
                     # Add ex-secondary as the tertiary right away
                     secondary = token_metadata.tokens[token].replicas[1]
                     if secondary.uuid not in self.uuids:
                         self.uuids.add(secondary.uuid)
                         self.replicas.append(secondary)
+        self.str_uuids = ""
+        for uuid in self.uuids:
+            self.str_uuids = self.str_uuids + " " + str(uuid)
                     
 
     def __hash__(self):
@@ -130,7 +136,7 @@ class ReplicaSet:
            with the same set of nodes but a different primary
            are considered identical"""
 
-        return hash(x for x in self.uuids)
+        return hash(self.str_uuids) #x for x in self.uuids)
 
     def __eq__(self, other):
         if not isinstance(other, ReplicaSet):
